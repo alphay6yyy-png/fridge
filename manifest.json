@@ -1,0 +1,45 @@
+{
+  "name": "AI冰箱食材管理",
+  "short_name": "冰箱管理",
+  "description": "智能冰箱食材管理应用，支持图像识别、过期提醒、智能购物清单",
+  "start_url": "index.html",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#007bff",
+  "icons": [
+    {
+      "src": "assets/images/app-icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/images/app-icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "assets/images/app-icon-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "orientation": "portrait",
+  "categories": ["food", "shopping", "productivity"],
+  "shortcuts": [
+    {
+      "name": "添加食材",
+      "short_name": "添加",
+      "description": "快速添加新食材",
+      "url": "index.html?page=inventory&action=add",
+      "icons": [{ "src": "assets/images/add-icon.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "查看库存",
+      "short_name": "库存",
+      "description": "查看所有食材库存",
+      "url": "index.html?page=inventory",
+      "icons": [{ "src": "assets/images/inventory-icon.png", "sizes": "96x96" }]
+    }
+  ]
+}

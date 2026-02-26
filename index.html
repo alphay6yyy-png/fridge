@@ -1,0 +1,1619 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>智能冰箱管家</title>
+    <!-- Tailwind CSS v3 -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Font Awesome -->
+    <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.8/dist/chart.umd.min.js"></script>
+    <!-- 统一的 Tailwind 配置 -->
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        primary: '#0ea5e9',
+                        secondary: '#10b981',
+                        accent: '#06b6d4',
+                        warning: '#f59e0b',
+                        danger: '#ef4444',
+                        dark: '#1e293b',
+                        light: '#f8fafc'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                    },
+                    animation: {
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+    <style type="text/tailwindcss">
+        @layer utilities {
+            .content-auto {
+                content-visibility: auto;
+            }
+            .text-shadow {
+                text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            }
+            .card-shadow {
+                box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            }
+            .btn-shadow {
+                box-shadow: 0 10px 15px -3px rgba(14, 165, 233, 0.3);
+            }
+            .btn-shadow-green {
+                box-shadow: 0 10px 15px -3px rgba(16, 185, 129, 0.3);
+            }
+            .btn-shadow-warning {
+                box-shadow: 0 10px 15px -3px rgba(245, 158, 11, 0.3);
+            }
+            .progress-ring-circle {
+                transition: stroke-dashoffset 0.35s;
+                transform: rotate(-90deg);
+                transform-origin: 50% 50%;
+            }
+        }
+    </style>
+    <style>
+        /* 自定义样式 */
+        body {
+            font-family: 'Inter', system-ui, sans-serif;
+            background-color: #f8fafc;
+            overscroll-behavior: none;
+            touch-action: manipulation;
+        }
+        
+        .page {
+            display: none;
+            min-height: calc(100vh - 60px);
+        }
+        
+        .page.active {
+            display: block;
+        }
+        
+        .tab-icon {
+            transition: all 0.3s ease;
+        }
+        
+        .tab-icon.active {
+            color: #0ea5e9;
+            transform: scale(1.1);
+        }
+        
+        .tab-label {
+            transition: all 0.3s ease;
+            font-size: 10px;
+        }
+        
+        .tab-label.active {
+            color: #0ea5e9;
+            font-weight: 600;
+        }
+        
+        .camera-btn {
+            transition: all 0.3s ease;
+        }
+        
+        .camera-btn:active {
+            transform: scale(0.95);
+        }
+        
+        .ingredient-card {
+            transition: all 0.3s ease;
+        }
+        
+        .ingredient-card:active {
+            transform: scale(0.98);
+        }
+        
+        .status-fresh {
+            background-color: rgba(16, 185, 129, 0.1);
+            border-left: 4px solid #10b981;
+        }
+        
+        .status-warning {
+            background-color: rgba(245, 158, 11, 0.1);
+            border-left: 4px solid #f59e0b;
+        }
+        
+        .status-expired {
+            background-color: rgba(239, 68, 68, 0.1);
+            border-left: 4px solid #ef4444;
+        }
+        
+        /* 动画效果 */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        .fade-in {
+            animation: fadeIn 0.3s ease forwards;
+        }
+        
+        .fade-in-delay-1 {
+            animation: fadeIn 0.3s ease 0.1s forwards;
+            opacity: 0;
+        }
+        
+        .fade-in-delay-2 {
+            animation: fadeIn 0.3s ease 0.2s forwards;
+            opacity: 0;
+        }
+        
+        .fade-in-delay-3 {
+            animation: fadeIn 0.3s ease 0.3s forwards;
+            opacity: 0;
+        }
+        
+        /* 扫描动画 */
+        @keyframes scan {
+            0% { transform: translateY(-100%); }
+            50% { transform: translateY(100%); }
+            100% { transform: translateY(-100%); }
+        }
+        
+        .scan-line {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, transparent, #0ea5e9, transparent);
+            animation: scan 2s ease-in-out infinite;
+        }
+        
+        /* 骨架屏 */
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        
+        .skeleton {
+            background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+            background-size: 200% 100%;
+            animation: pulse 1.5s infinite;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800">
+    <!-- 页面容器 -->
+    <div class="container mx-auto px-4 pb-16">
+        <!-- 首页 (P2) -->
+        <div id="home-page" class="page active">
+            <!-- 顶部栏 -->
+            <div class="flex justify-between items-center pt-6 pb-2">
+                <h1 class="text-2xl font-bold text-dark">智能冰箱管家</h1>
+                <div class="relative">
+                    <button id="notification-btn" class="p-2 rounded-full bg-gray-100">
+                        <i class="fa fa-bell-o text-gray-600"></i>
+                        <span id="notification-badge" class="absolute top-0 right-0 w-4 h-4 bg-danger rounded-full text-white text-xs flex items-center justify-center">2</span>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 过期提醒卡片 -->
+            <div class="bg-white rounded-xl p-4 mb-6 card-shadow fade-in">
+                <div class="flex justify-between items-center mb-3">
+                    <h2 class="text-lg font-semibold">过期提醒</h2>
+                    <a href="#inventory-page" class="text-primary text-sm">查看全部</a>
+                </div>
+                <div id="expiry-alerts" class="space-y-3">
+                    <div class="flex items-center justify-between p-3 bg-red-50 rounded-lg border-l-4 border-danger">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center mr-3">
+                                <i class="fa fa-exclamation-triangle text-danger"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium">牛奶</p>
+                                <p class="text-xs text-gray-500">已过期 1 天</p>
+                            </div>
+                        </div>
+                        <button class="text-gray-400 hover:text-gray-600">
+                            <i class="fa fa-ellipsis-v"></i>
+                        </button>
+                    </div>
+                    <div class="flex items-center justify-between p-3 bg-yellow-50 rounded-lg border-l-4 border-warning">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center mr-3">
+                                <i class="fa fa-clock-o text-warning"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium">鸡蛋</p>
+                                <p class="text-xs text-gray-500">还有 2 天过期</p>
+                            </div>
+                        </div>
+                        <button class="text-gray-400 hover:text-gray-600">
+                            <i class="fa fa-ellipsis-v"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 主要功能区 -->
+            <div class="flex flex-col items-center mb-8 fade-in-delay-1">
+                <h2 class="text-lg font-semibold mb-6 self-start">扫描冰箱</h2>
+                <div class="relative mb-6">
+                    <button id="camera-btn" class="w-32 h-32 rounded-full bg-gradient-to-r from-primary to-accent flex items-center justify-center text-white text-3xl camera-btn btn-shadow">
+                        <i class="fa fa-camera"></i>
+                    </button>
+                    <div class="absolute -bottom-2 left-1/2 transform -translate-x-1/2 bg-white px-4 py-1 rounded-full text-xs text-gray-500">
+                        拍照识别
+                    </div>
+                </div>
+                <button id="gallery-btn" class="flex items-center text-primary mb-2">
+                    <i class="fa fa-image mr-2"></i>
+                    <span>从相册选择</span>
+                </button>
+                <button id="manual-btn" class="flex items-center text-gray-600">
+                    <i class="fa fa-plus-circle mr-2"></i>
+                    <span>手动添加</span>
+                </button>
+            </div>
+            
+            <!-- 快捷功能 -->
+            <div class="grid grid-cols-2 gap-4 fade-in-delay-2">
+                <a href="#recipe-page" class="bg-white rounded-xl p-4 flex items-center card-shadow hover:shadow-lg transition-shadow">
+                    <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mr-4">
+                        <i class="fa fa-cutlery text-primary text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-medium">菜谱食材</h3>
+                        <p class="text-xs text-gray-500">输入菜品，获取食材</p>
+                    </div>
+                </a>
+                <a href="#shopping-page" class="bg-white rounded-xl p-4 flex items-center card-shadow hover:shadow-lg transition-shadow">
+                    <div class="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center mr-4">
+                        <i class="fa fa-shopping-cart text-secondary text-xl"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-medium">购物清单</h3>
+                        <p class="text-xs text-gray-500">智能生成购物清单</p>
+                    </div>
+                </a>
+            </div>
+        </div>
+        
+        <!-- 图片分析页 (P3) -->
+        <div id="analyze-page" class="page">
+            <div class="flex justify-between items-center pt-6 pb-4">
+                <button class="back-btn p-2">
+                    <i class="fa fa-arrow-left text-gray-700"></i>
+                </button>
+                <h1 class="text-xl font-bold">分析图片</h1>
+                <div class="w-8"></div> <!-- 占位，保持标题居中 -->
+            </div>
+            
+            <div class="bg-white rounded-xl p-4 mb-6 card-shadow">
+                <div class="relative mb-4">
+                    <img id="preview-image" src="https://p26-doubao-search-sign.byteimg.com/labis/227b74b7486032a8c3bab88c84fd7f65~tplv-be4g95zd3a-image.jpeg?lk3s=feb11e32&x-expires=1787629329&x-signature=TN4pmQRpBcGTDYibXiwclJd5cxQ%3D" class="w-full h-64 object-cover rounded-lg" alt="冰箱内部">
+                    <div class="scan-line"></div>
+                </div>
+                
+                <div class="mb-4">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="text-sm text-gray-600">分析进度</span>
+                        <span id="analyze-progress-text" class="text-sm text-primary">75%</span>
+                    </div>
+                    <div class="w-full bg-gray-200 rounded-full h-2.5">
+                        <div id="analyze-progress" class="bg-primary h-2.5 rounded-full" style="width: 75%"></div>
+                    </div>
+                </div>
+                
+                <div id="analyze-status" class="text-center py-4">
+                    <p class="text-gray-600 mb-2">正在使用GPT-4o分析图片...</p>
+                    <p class="text-sm text-gray-500">识别食材和保质期</p>
+                </div>
+            </div>
+            
+            <div id="analyze-result-preview" class="bg-white rounded-xl p-4 mb-6 card-shadow hidden">
+                <h3 class="text-lg font-semibold mb-3">识别结果预览</h3>
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="flex flex-col items-center">
+                        <div class="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-1">
+                            <span class="text-gray-500">🥛</span>
+                        </div>
+                        <span class="text-xs text-center">牛奶</span>
+                    </div>
+                    <div class="flex flex-col items-center">
+                        <div class="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-1">
+                            <span class="text-gray-500">🥚</span>
+                        </div>
+                        <span class="text-xs text-center">鸡蛋</span>
+                    </div>
+                    <div class="flex flex-col items-center">
+                        <div class="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center mb-1">
+                            <span class="text-gray-500">🥬</span>
+                        </div>
+                        <span class="text-xs text-center">生菜</span>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="fixed bottom-20 left-0 right-0 px-4">
+                <button id="continue-btn" class="w-full py-3 bg-primary text-white rounded-xl font-medium btn-shadow hidden">
+                    继续
+                </button>
+            </div>
+        </div>
+        
+        <!-- 分析结果页 (P4) -->
+        <div id="result-page" class="page">
+            <div class="flex justify-between items-center pt-6 pb-4">
+                <button class="back-btn p-2">
+                    <i class="fa fa-arrow-left text-gray-700"></i>
+                </button>
+                <h1 class="text-xl font-bold">分析结果</h1>
+                <div class="w-8"></div> <!-- 占位，保持标题居中 -->
+            </div>
+            
+            <div class="bg-white rounded-xl p-4 mb-6 card-shadow">
+                <h3 class="text-lg font-semibold mb-3">冷藏室</h3>
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div class="ingredient-card bg-gray-50 rounded-lg p-3 flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-blue-50 flex items-center justify-center mr-3">
+                            <span class="text-xl">🥛</span>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex justify-between">
+                                <p class="font-medium">牛奶</p>
+                                <span class="text-xs text-gray-500">1盒</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-warning">7天后过期</span>
+                                <div class="w-16 h-1 bg-gray-200 rounded-full">
+                                    <div class="h-1 bg-warning rounded-full" style="width: 70%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ingredient-card bg-gray-50 rounded-lg p-3 flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-green-50 flex items-center justify-center mr-3">
+                            <span class="text-xl">🥬</span>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex justify-between">
+                                <p class="font-medium">生菜</p>
+                                <span class="text-xs text-gray-500">1颗</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-secondary">5天后过期</span>
+                                <div class="w-16 h-1 bg-gray-200 rounded-full">
+                                    <div class="h-1 bg-secondary rounded-full" style="width: 80%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ingredient-card bg-gray-50 rounded-lg p-3 flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mr-3">
+                            <span class="text-xl">🍅</span>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex justify-between">
+                                <p class="font-medium">番茄</p>
+                                <span class="text-xs text-gray-500">4个</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-secondary">6天后过期</span>
+                                <div class="w-16 h-1 bg-gray-200 rounded-full">
+                                    <div class="h-1 bg-secondary rounded-full" style="width: 75%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <h3 class="text-lg font-semibold mb-3">冷冻室</h3>
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="ingredient-card bg-gray-50 rounded-lg p-3 flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-red-50 flex items-center justify-center mr-3">
+                            <span class="text-xl">🥩</span>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex justify-between">
+                                <p class="font-medium">牛肉</p>
+                                <span class="text-xs text-gray-500">500g</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-secondary">30天后过期</span>
+                                <div class="w-16 h-1 bg-gray-200 rounded-full">
+                                    <div class="h-1 bg-secondary rounded-full" style="width: 95%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="ingredient-card bg-gray-50 rounded-lg p-3 flex items-center">
+                        <div class="w-12 h-12 rounded-full bg-yellow-50 flex items-center justify-center mr-3">
+                            <span class="text-xl">🍗</span>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex justify-between">
+                                <p class="font-medium">鸡肉</p>
+                                <span class="text-xs text-gray-500">300g</span>
+                            </div>
+                            <div class="flex justify-between items-center">
+                                <span class="text-xs text-secondary">25天后过期</span>
+                                <div class="w-16 h-1 bg-gray-200 rounded-full">
+                                    <div class="h-1 bg-secondary rounded-full" style="width: 90%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="fixed bottom-20 left-0 right-0 px-4">
+                <button id="add-to-inventory-btn" class="w-full py-3 bg-primary text-white rounded-xl font-medium btn-shadow">
+                    添加到库存
+                </button>
+            </div>
+        </div>
+        
+        <!-- 库存管理页 (P5) -->
+        <div id="inventory-page" class="page">
+            <div class="flex justify-between items-center pt-6 pb-4">
+                <h1 class="text-xl font-bold">我的库存</h1>
+                <div class="flex space-x-2">
+                    <button class="p-2 rounded-full bg-gray-100">
+                        <i class="fa fa-filter text-gray-600"></i>
+                    </button>
+                    <button class="p-2 rounded-full bg-gray-100">
+                        <i class="fa fa-search text-gray-600"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 分类标签 -->
+            <div class="flex overflow-x-auto pb-2 mb-4 scrollbar-hide">
+                <button class="category-btn whitespace-nowrap px-4 py-2 bg-primary text-white rounded-full text-sm font-medium mr-2">
+                    全部
+                </button>
+                <button class="category-btn whitespace-nowrap px-4 py-2 bg-white text-gray-700 rounded-full text-sm font-medium mr-2">
+                    蔬菜
+                </button>
+                <button class="category-btn whitespace-nowrap px-4 py-2 bg-white text-gray-700 rounded-full text-sm font-medium mr-2">
+                    水果
+                </button>
+                <button class="category-btn whitespace-nowrap px-4 py-2 bg-white text-gray-700 rounded-full text-sm font-medium mr-2">
+                    肉类
+                </button>
+                <button class="category-btn whitespace-nowrap px-4 py-2 bg-white text-gray-700 rounded-full text-sm font-medium mr-2">
+                    乳制品
+                </button>
+                <button class="category-btn whitespace-nowrap px-4 py-2 bg-white text-gray-700 rounded-full text-sm font-medium">
+                    其他
+                </button>
+            </div>
+            
+            <!-- 库存列表 -->
+            <div class="space-y-3 mb-20">
+                <!-- 已过期 -->
+                <div class="mb-4">
+                    <h3 class="text-sm font-medium text-gray-500 mb-2">已过期</h3>
+                    <div class="ingredient-card status-expired bg-white rounded-xl p-4 card-shadow">
+                        <div class="flex items-center">
+                            <div class="w-14 h-14 rounded-lg bg-red-50 flex items-center justify-center mr-4">
+                                <span class="text-2xl">🥛</span>
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex justify-between">
+                                    <p class="font-medium">牛奶</p>
+                                    <span class="text-xs text-danger font-medium">已过期</span>
+                                </div>
+                                <div class="flex justify-between items-center mt-1">
+                                    <div class="flex items-center">
+                                        <span class="text-xs text-gray-500 quantity-display">1盒</span>
+                                        <div class="quantity-controls hidden ml-2 flex items-center">
+                                            <button class="decrease-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">-</button>
+                                            <span class="mx-1 quantity-value text-xs">1</span>
+                                            <button class="increase-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">+</button>
+                                        </div>
+                                        <span class="text-xs text-gray-500 ml-1">· 冷藏室</span>
+                                    </div>
+                                    <span class="text-xs text-danger">1天前过期</span>
+                                </div>
+                            </div>
+                            <button class="edit-expiry-btn p-2 text-gray-400 hover:text-primary" data-ingredient="牛奶" data-expiry="2023-07-20" data-location="冷藏室">
+                                <i class="fa fa-pencil"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 即将过期 -->
+                <div class="mb-4">
+                    <h3 class="text-sm font-medium text-gray-500 mb-2">即将过期 (3天内)</h3>
+                    <div class="ingredient-card status-warning bg-white rounded-xl p-4 card-shadow">
+                        <div class="flex items-center">
+                            <div class="w-14 h-14 rounded-lg bg-yellow-50 flex items-center justify-center mr-4">
+                                <span class="text-2xl">🥚</span>
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex justify-between">
+                                    <p class="font-medium">鸡蛋</p>
+                                    <span class="text-xs text-warning font-medium">即将过期</span>
+                                </div>
+                                <div class="flex justify-between items-center mt-1">
+                                    <div class="flex items-center">
+                                        <span class="text-xs text-gray-500 quantity-display">6个</span>
+                                        <div class="quantity-controls hidden ml-2 flex items-center">
+                                            <button class="decrease-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">-</button>
+                                            <span class="mx-1 quantity-value text-xs">6</span>
+                                            <button class="increase-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">+</button>
+                                        </div>
+                                        <span class="text-xs text-gray-500 ml-1">· 冷藏室</span>
+                                    </div>
+                                    <span class="text-xs text-warning">还有2天</span>
+                                </div>
+                            </div>
+                            <button class="edit-expiry-btn p-2 text-gray-400 hover:text-primary" data-ingredient="鸡蛋" data-expiry="2023-07-25" data-location="冷藏室">
+                                <i class="fa fa-pencil"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 新鲜 -->
+                <div>
+                    <h3 class="text-sm font-medium text-gray-500 mb-2">新鲜</h3>
+                    <div class="ingredient-card status-fresh bg-white rounded-xl p-4 card-shadow mb-3">
+                        <div class="flex items-center">
+                            <div class="w-14 h-14 rounded-lg bg-green-50 flex items-center justify-center mr-4">
+                                <span class="text-2xl">🥬</span>
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex justify-between">
+                                    <p class="font-medium">生菜</p>
+                                    <span class="text-xs text-secondary font-medium">新鲜</span>
+                                </div>
+                                <div class="flex justify-between items-center mt-1">
+                                    <div class="flex items-center">
+                                        <span class="text-xs text-gray-500 quantity-display">1颗</span>
+                                        <div class="quantity-controls hidden ml-2 flex items-center">
+                                            <button class="decrease-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">-</button>
+                                            <span class="mx-1 quantity-value text-xs">1</span>
+                                            <button class="increase-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">+</button>
+                                        </div>
+                                        <span class="text-xs text-gray-500 ml-1">· 冷藏室</span>
+                                    </div>
+                                    <span class="text-xs text-secondary">还有5天</span>
+                                </div>
+                            </div>
+                            <button class="edit-expiry-btn p-2 text-gray-400 hover:text-primary" data-ingredient="生菜" data-expiry="2023-07-28" data-location="冷藏室">
+                                <i class="fa fa-pencil"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="ingredient-card status-fresh bg-white rounded-xl p-4 card-shadow mb-3">
+                        <div class="flex items-center">
+                            <div class="w-14 h-14 rounded-lg bg-red-50 flex items-center justify-center mr-4">
+                                <span class="text-2xl">🍅</span>
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex justify-between">
+                                    <p class="font-medium">番茄</p>
+                                    <span class="text-xs text-secondary font-medium">新鲜</span>
+                                </div>
+                                <div class="flex justify-between items-center mt-1">
+                                    <div class="flex items-center">
+                                        <span class="text-xs text-gray-500 quantity-display">4个</span>
+                                        <div class="quantity-controls hidden ml-2 flex items-center">
+                                            <button class="decrease-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">-</button>
+                                            <span class="mx-1 quantity-value text-xs">4</span>
+                                            <button class="increase-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">+</button>
+                                        </div>
+                                        <span class="text-xs text-gray-500 ml-1">· 冷藏室</span>
+                                    </div>
+                                    <span class="text-xs text-secondary">还有6天</span>
+                                </div>
+                            </div>
+                            <button class="edit-expiry-btn p-2 text-gray-400 hover:text-primary" data-ingredient="番茄" data-expiry="2023-07-29" data-location="冷藏室">
+                                <i class="fa fa-pencil"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="ingredient-card status-fresh bg-white rounded-xl p-4 card-shadow mb-3">
+                        <div class="flex items-center">
+                            <div class="w-14 h-14 rounded-lg bg-red-50 flex items-center justify-center mr-4">
+                                <span class="text-2xl">🥩</span>
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex justify-between">
+                                    <p class="font-medium">牛肉</p>
+                                    <span class="text-xs text-secondary font-medium">新鲜</span>
+                                </div>
+                                <div class="flex justify-between items-center mt-1">
+                                    <div class="flex items-center">
+                                        <span class="text-xs text-gray-500 quantity-display">500g</span>
+                                        <div class="quantity-controls hidden ml-2 flex items-center">
+                                            <button class="decrease-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">-</button>
+                                            <span class="mx-1 quantity-value text-xs">500</span>
+                                            <button class="increase-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">+</button>
+                                        </div>
+                                        <span class="text-xs text-gray-500 ml-1">· 冷冻室</span>
+                                    </div>
+                                    <span class="text-xs text-secondary">还有30天</span>
+                                </div>
+                            </div>
+                            <button class="edit-expiry-btn p-2 text-gray-400 hover:text-primary" data-ingredient="牛肉" data-expiry="2023-08-22" data-location="冷冻室">
+                                <i class="fa fa-pencil"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="ingredient-card status-fresh bg-white rounded-xl p-4 card-shadow">
+                        <div class="flex items-center">
+                            <div class="w-14 h-14 rounded-lg bg-yellow-50 flex items-center justify-center mr-4">
+                                <span class="text-2xl">🍗</span>
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex justify-between">
+                                    <p class="font-medium">鸡肉</p>
+                                    <span class="text-xs text-secondary font-medium">新鲜</span>
+                                </div>
+                                <div class="flex justify-between items-center mt-1">
+                                    <div class="flex items-center">
+                                        <span class="text-xs text-gray-500 quantity-display">300g</span>
+                                        <div class="quantity-controls hidden ml-2 flex items-center">
+                                            <button class="decrease-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">-</button>
+                                            <span class="mx-1 quantity-value text-xs">300</span>
+                                            <button class="increase-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">+</button>
+                                        </div>
+                                        <span class="text-xs text-gray-500 ml-1">· 冷冻室</span>
+                                    </div>
+                                    <span class="text-xs text-secondary">还有25天</span>
+                                </div>
+                            </div>
+                            <button class="edit-expiry-btn p-2 text-gray-400 hover:text-primary" data-ingredient="鸡肉" data-expiry="2023-08-17" data-location="冷冻室">
+                                <i class="fa fa-pencil"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 菜谱食材页 (P6) -->
+        <div id="recipe-page" class="page">
+            <div class="flex justify-between items-center pt-6 pb-4">
+                <h1 class="text-xl font-bold">菜谱食材</h1>
+                <div class="w-8"></div> <!-- 占位，保持标题居中 -->
+            </div>
+            
+            <div class="bg-white rounded-xl p-4 mb-6 card-shadow">
+                <div class="mb-4">
+                    <label for="recipe-input" class="block text-sm font-medium text-gray-700 mb-1">输入你想吃的菜</label>
+                    <div class="flex">
+                        <input type="text" id="recipe-input" class="flex-1 border border-gray-300 rounded-l-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="例如：宫保鸡丁">
+                        <button id="generate-recipe-btn" class="bg-primary text-white px-4 py-2 rounded-r-lg">
+                            <i class="fa fa-arrow-right"></i>
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="mb-4">
+                    <h3 class="text-sm font-medium text-gray-700 mb-2">历史记录</h3>
+                    <div class="flex flex-wrap gap-2">
+                        <span class="px-3 py-1 bg-gray-100 rounded-full text-xs text-gray-700">宫保鸡丁</span>
+                        <span class="px-3 py-1 bg-gray-100 rounded-full text-xs text-gray-700">西红柿鸡蛋汤</span>
+                        <span class="px-3 py-1 bg-gray-100 rounded-full text-xs text-gray-700">青椒炒肉</span>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 菜谱结果 -->
+            <div id="recipe-result" class="bg-white rounded-xl p-4 mb-6 card-shadow hidden">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">宫保鸡丁</h3>
+                    <span class="text-xs text-gray-500">GPT-4o 生成</span>
+                </div>
+                
+                <div class="mb-4">
+                    <h4 class="text-sm font-medium text-gray-700 mb-2">所需食材</h4>
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="flex items-center">
+                            <input type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mr-2" checked>
+                            <span class="text-sm">鸡胸肉 300g</span>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mr-2">
+                            <span class="text-sm">花生 50g</span>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mr-2" checked>
+                            <span class="text-sm">干辣椒 8个</span>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mr-2" checked>
+                            <span class="text-sm">葱 1根</span>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mr-2" checked>
+                            <span class="text-sm">姜 1小块</span>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mr-2" checked>
+                            <span class="text-sm">蒜 3瓣</span>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mr-2">
+                            <span class="text-sm">酱油 2勺</span>
+                        </div>
+                        <div class="flex items-center">
+                            <input type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mr-2">
+                            <span class="text-sm">糖 1勺</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <div>
+                    <h4 class="text-sm font-medium text-gray-700 mb-2">烹饪步骤</h4>
+                    <ol class="text-sm text-gray-600 space-y-2 list-decimal list-inside">
+                        <li>鸡胸肉切成1.5厘米见方的小丁，用料酒、盐、淀粉腌制15分钟</li>
+                        <li>花生提前用油炸熟或烤香</li>
+                        <li>葱切段，姜、蒜切末</li>
+                        <li>热锅冷油，下鸡丁炒至变色</li>
+                        <li>加入干辣椒、葱姜蒜炒出香味</li>
+                        <li>加入酱油、糖、醋等调味料</li>
+                        <li>最后加入花生炒匀即可</li>
+                    </ol>
+                </div>
+            </div>
+            
+            <div class="fixed bottom-20 left-0 right-0 px-4">
+                <button id="add-to-shopping-btn" class="w-full py-3 bg-secondary text-white rounded-xl font-medium btn-shadow-green hidden">
+                    添加到购物清单
+                </button>
+            </div>
+        </div>
+        
+        <!-- 购物清单页 (P7) -->
+        <div id="shopping-page" class="page">
+            <div class="flex justify-between items-center pt-6 pb-4">
+                <h1 class="text-xl font-bold">购物清单</h1>
+                <div class="flex space-x-2">
+                    <button class="p-2 rounded-full bg-gray-100">
+                        <i class="fa fa-share-alt text-gray-600"></i>
+                    </button>
+                    <button class="p-2 rounded-full bg-gray-100">
+                        <i class="fa fa-trash-o text-gray-600"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl p-4 mb-6 card-shadow">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-semibold">缺少的食材</h3>
+                    <span class="text-xs text-gray-500">共 4 项</span>
+                </div>
+                
+                <!-- 分类：肉类 -->
+                <div class="mb-4">
+                    <h4 class="text-sm font-medium text-gray-700 mb-2">肉类</h4>
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mr-2">
+                                <span class="text-sm">鸡胸肉 300g</span>
+                            </div>
+                            <button class="text-gray-400 hover:text-gray-600">
+                                <i class="fa fa-ellipsis-v"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 分类：调料 -->
+                <div class="mb-4">
+                    <h4 class="text-sm font-medium text-gray-700 mb-2">调料</h4>
+                    <div class="space-y-2">
+                        <div class="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mr-2">
+                                <span class="text-sm">花生 50g</span>
+                            </div>
+                            <button class="text-gray-400 hover:text-gray-600">
+                                <i class="fa fa-ellipsis-v"></i>
+                            </button>
+                        </div>
+                        <div class="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mr-2">
+                                <span class="text-sm">酱油 2勺</span>
+                            </div>
+                            <button class="text-gray-400 hover:text-gray-600">
+                                <i class="fa fa-ellipsis-v"></i>
+                            </button>
+                        </div>
+                        <div class="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+                            <div class="flex items-center">
+                                <input type="checkbox" class="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary mr-2">
+                                <span class="text-sm">糖 1勺</span>
+                            </div>
+                            <button class="text-gray-400 hover:text-gray-600">
+                                <i class="fa fa-ellipsis-v"></i>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 附近超市 -->
+            <div class="bg-white rounded-xl p-4 mb-20 card-shadow">
+                <h3 class="text-lg font-semibold mb-3">附近超市</h3>
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center mr-3">
+                                <i class="fa fa-shopping-basket text-red-500"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium">永辉超市</p>
+                                <p class="text-xs text-gray-500">距离 500m · 营业中</p>
+                            </div>
+                        </div>
+                        <button class="text-primary text-sm">
+                            <i class="fa fa-location-arrow mr-1"></i>
+                            导航
+                        </button>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center">
+                            <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center mr-3">
+                                <i class="fa fa-shopping-basket text-blue-500"></i>
+                            </div>
+                            <div>
+                                <p class="font-medium">盒马鲜生</p>
+                                <p class="text-xs text-gray-500">距离 1.2km · 营业中</p>
+                            </div>
+                        </div>
+                        <button class="text-primary text-sm">
+                            <i class="fa fa-location-arrow mr-1"></i>
+                            导航
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 冰箱设置页 (P8) -->
+        <div id="settings-page" class="page">
+            <div class="flex justify-between items-center pt-6 pb-4">
+                <h1 class="text-xl font-bold">冰箱设置</h1>
+                <div class="w-8"></div> <!-- 占位，保持标题居中 -->
+            </div>
+            
+            <div class="bg-white rounded-xl p-4 mb-6 card-shadow">
+                <h3 class="text-lg font-semibold mb-3">冰箱隔层</h3>
+                <p class="text-sm text-gray-600 mb-4">自定义你的冰箱隔层，以便更好地管理食材</p>
+                
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-4 mb-4 min-h-[200px]">
+                    <div class="grid grid-cols-2 gap-3">
+                        <div class="bg-primary bg-opacity-10 p-3 rounded-lg text-center">
+                            <p class="font-medium text-primary">冷藏室</p>
+                            <p class="text-xs text-gray-500">4°C</p>
+                        </div>
+                        <div class="bg-primary bg-opacity-10 p-3 rounded-lg text-center">
+                            <p class="font-medium text-primary">冷冻室</p>
+                            <p class="text-xs text-gray-500">-18°C</p>
+                        </div>
+                        <div class="bg-primary bg-opacity-10 p-3 rounded-lg text-center">
+                            <p class="font-medium text-primary">变温室</p>
+                            <p class="text-xs text-gray-500">0°C</p>
+                        </div>
+                        <div class="bg-gray-100 p-3 rounded-lg text-center flex items-center justify-center">
+                            <button class="text-gray-500 hover:text-primary">
+                                <i class="fa fa-plus-circle mr-1"></i>
+                                <span>添加隔层</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <button class="w-full py-2 bg-primary text-white rounded-lg">
+                    保存设置
+                </button>
+            </div>
+            
+            <div class="bg-white rounded-xl p-4 mb-6 card-shadow">
+                <h3 class="text-lg font-semibold mb-3">通知设置</h3>
+                <div class="space-y-4">
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <p class="font-medium">过期提醒</p>
+                            <p class="text-xs text-gray-500">食材即将过期时通知我</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" class="sr-only peer" checked>
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <p class="font-medium">每周库存报告</p>
+                            <p class="text-xs text-gray-500">每周一收到库存摘要</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" class="sr-only peer">
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <div>
+                            <p class="font-medium">低库存提醒</p>
+                            <p class="text-xs text-gray-500">食材快用完时通知我</p>
+                        </div>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" class="sr-only peer" checked>
+                            <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="bg-white rounded-xl p-4 mb-20 card-shadow">
+                <h3 class="text-lg font-semibold mb-3">关于应用</h3>
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <p class="text-gray-600">版本</p>
+                        <p class="font-medium">1.0.0</p>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <p class="text-gray-600">开发者</p>
+                        <p class="font-medium">AI冰箱管家团队</p>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <p class="text-gray-600">帮助与反馈</p>
+                        <button class="text-primary">
+                            <i class="fa fa-chevron-right"></i>
+                        </button>
+                    </div>
+                    <div class="flex justify-between items-center">
+                        <p class="text-gray-600">隐私政策</p>
+                        <button class="text-primary">
+                            <i class="fa fa-chevron-right"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 底部导航栏 -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 px-4 py-2">
+        <div class="flex justify-around">
+            <a href="#home-page" class="tab-item flex flex-col items-center w-16">
+                <i class="fa fa-home tab-icon text-2xl active"></i>
+                <span class="tab-label mt-1 active">首页</span>
+            </a>
+            <a href="#inventory-page" class="tab-item flex flex-col items-center w-16">
+                <i class="fa fa-list tab-icon text-2xl text-gray-500"></i>
+                <span class="tab-label mt-1 text-gray-500">库存</span>
+            </a>
+            <a href="#recipe-page" class="tab-item flex flex-col items-center w-16">
+                <i class="fa fa-cutlery tab-icon text-2xl text-gray-500"></i>
+                <span class="tab-label mt-1 text-gray-500">菜谱</span>
+            </a>
+            <a href="#settings-page" class="tab-item flex flex-col items-center w-16">
+                <i class="fa fa-cog tab-icon text-2xl text-gray-500"></i>
+                <span class="tab-label mt-1 text-gray-500">设置</span>
+            </a>
+        </div>
+    </nav>
+    
+    <!-- 通知弹窗 -->
+    <div id="notification-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50 hidden">
+        <div class="bg-white rounded-xl w-5/6 max-w-md max-h-[70vh] overflow-y-auto">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 class="text-lg font-semibold">通知</h3>
+                <button id="close-notification" class="text-gray-500">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+            <div class="p-4 space-y-4">
+                <div class="flex items-start p-3 bg-red-50 rounded-lg">
+                    <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center mr-3 flex-shrink-0">
+                        <i class="fa fa-exclamation-triangle text-danger"></i>
+                    </div>
+                    <div>
+                        <p class="font-medium">牛奶已过期</p>
+                        <p class="text-sm text-gray-600">您的牛奶已于昨天过期，请及时处理。</p>
+                        <p class="text-xs text-gray-500 mt-1">今天 08:30</p>
+                    </div>
+                </div>
+                <div class="flex items-start p-3 bg-yellow-50 rounded-lg">
+                    <div class="w-10 h-10 rounded-full bg-yellow-100 flex items-center justify-center mr-3 flex-shrink-0">
+                        <i class="fa fa-clock-o text-warning"></i>
+                    </div>
+                    <div>
+                        <p class="font-medium">鸡蛋即将过期</p>
+                        <p class="text-sm text-gray-600">您的鸡蛋将在2天后过期，建议尽快食用。</p>
+                        <p class="text-xs text-gray-500 mt-1">今天 08:30</p>
+                    </div>
+                </div>
+                <div class="flex items-start p-3 bg-blue-50 rounded-lg">
+                    <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center mr-3 flex-shrink-0">
+                        <i class="fa fa-info-circle text-primary"></i>
+                    </div>
+                    <div>
+                        <p class="font-medium">库存更新成功</p>
+                        <p class="text-sm text-gray-600">您的冰箱库存已更新，新增了5种食材。</p>
+                        <p class="text-xs text-gray-500 mt-1">昨天 19:45</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 过期提醒操作菜单 -->
+    <div id="expiry-action-menu" class="fixed hidden z-50 bg-white rounded-xl shadow-lg w-48">
+        <div class="py-1">
+            <button id="mark-as-cleared" class="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100">
+                <i class="fa fa-check-circle mr-2 text-green-500"></i>标记为已清理
+            </button>
+            <button id="view-details" class="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100">
+                <i class="fa fa-eye mr-2 text-blue-500"></i>查看详情
+            </button>
+            <button id="cancel-action" class="w-full text-left px-4 py-2 text-gray-700 hover:bg-gray-100">
+                <i class="fa fa-times mr-2 text-gray-500"></i>取消
+            </button>
+        </div>
+    </div>
+    
+    <!-- 编辑保质期弹窗 -->
+    <div id="edit-expiry-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50 hidden">
+        <div class="bg-white rounded-xl w-5/6 max-w-md">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 class="text-lg font-semibold">编辑保质期</h3>
+                <button id="close-edit-expiry" class="text-gray-500">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+            <div class="p-4">
+                <div class="mb-4">
+                    <label for="ingredient-name" class="block text-sm font-medium text-gray-700 mb-1">食材名称</label>
+                    <input type="text" id="ingredient-name" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" readonly>
+                </div>
+                <div class="mb-4">
+                    <label for="expiry-date" class="block text-sm font-medium text-gray-700 mb-1">过期日期</label>
+                    <input type="date" id="expiry-date" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                </div>
+                <div class="mb-4">
+                    <label for="storage-location" class="block text-sm font-medium text-gray-700 mb-1">存储位置</label>
+                    <select id="storage-location" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                        <option value="冷藏室">冷藏室</option>
+                        <option value="冷冻室">冷冻室</option>
+                        <option value="变温室">变温室</option>
+                    </select>
+                </div>
+                <div class="flex space-x-3">
+                    <button id="save-expiry" class="flex-1 py-2 bg-primary text-white rounded-lg">保存</button>
+                    <button id="cancel-edit" class="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 手动添加食材弹窗 -->
+    <div id="add-ingredient-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-start justify-center pt-20 z-50 hidden">
+        <div class="bg-white rounded-xl w-5/6 max-w-md">
+            <div class="flex justify-between items-center p-4 border-b">
+                <h3 class="text-lg font-semibold">手动添加食材</h3>
+                <button id="close-add-ingredient" class="text-gray-500">
+                    <i class="fa fa-times"></i>
+                </button>
+            </div>
+            <div class="p-4">
+                <div class="mb-4">
+                    <label for="new-ingredient-name" class="block text-sm font-medium text-gray-700 mb-1">食材名称</label>
+                    <input type="text" id="new-ingredient-name" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="输入食材名称">
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label for="new-ingredient-quantity" class="block text-sm font-medium text-gray-700 mb-1">数量</label>
+                        <input type="number" id="new-ingredient-quantity" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent" placeholder="数量" min="1" value="1">
+                    </div>
+                    <div>
+                        <label for="new-ingredient-unit" class="block text-sm font-medium text-gray-700 mb-1">单位</label>
+                        <select id="new-ingredient-unit" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                            <option value="个">个</option>
+                            <option value="盒">盒</option>
+                            <option value="瓶">瓶</option>
+                            <option value="袋">袋</option>
+                            <option value="g">克(g)</option>
+                            <option value="kg">千克(kg)</option>
+                            <option value="颗">颗</option>
+                            <option value="根">根</option>
+                            <option value="把">把</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label for="new-ingredient-expiry" class="block text-sm font-medium text-gray-700 mb-1">过期日期</label>
+                    <input type="date" id="new-ingredient-expiry" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                </div>
+                <div class="mb-4">
+                    <label for="new-ingredient-location" class="block text-sm font-medium text-gray-700 mb-1">存储位置</label>
+                    <select id="new-ingredient-location" class="w-full border border-gray-300 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent">
+                        <option value="冷藏室">冷藏室</option>
+                        <option value="冷冻室">冷冻室</option>
+                        <option value="变温室">变温室</option>
+                    </select>
+                </div>
+                <div class="flex space-x-3">
+                    <button id="save-new-ingredient" class="flex-1 py-2 bg-primary text-white rounded-lg">添加</button>
+                    <button id="cancel-add-ingredient" class="flex-1 py-2 bg-gray-200 text-gray-700 rounded-lg">取消</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 页面切换逻辑
+        document.addEventListener('DOMContentLoaded', function() {
+            // 初始化页面
+            const pages = document.querySelectorAll('.page');
+            const tabItems = document.querySelectorAll('.tab-item');
+            const backButtons = document.querySelectorAll('.back-btn');
+            
+            // 页面切换函数
+            function showPage(pageId) {
+                pages.forEach(page => {
+                    page.classList.remove('active');
+                });
+                document.querySelector(pageId).classList.add('active');
+                
+                // 更新底部导航栏状态
+                tabItems.forEach(item => {
+                    const tabIcon = item.querySelector('.tab-icon');
+                    const tabLabel = item.querySelector('.tab-label');
+                    
+                    if (item.getAttribute('href') === pageId) {
+                        tabIcon.classList.add('active');
+                        tabIcon.classList.remove('text-gray-500');
+                        tabLabel.classList.add('active');
+                        tabLabel.classList.remove('text-gray-500');
+                    } else {
+                        tabIcon.classList.remove('active');
+                        tabIcon.classList.add('text-gray-500');
+                        tabLabel.classList.remove('active');
+                        tabLabel.classList.add('text-gray-500');
+                    }
+                });
+            }
+            
+            // 监听导航点击
+            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+                anchor.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    const pageId = this.getAttribute('href');
+                    showPage(pageId);
+                });
+            });
+            
+            // 监听返回按钮点击
+            backButtons.forEach(button => {
+                button.addEventListener('click', function() {
+                    showPage('#home-page');
+                });
+            });
+            
+            // 相机按钮点击事件
+            document.getElementById('camera-btn').addEventListener('click', function() {
+                showPage('#analyze-page');
+                simulateAnalysis();
+            });
+            
+            // 模拟图片分析过程
+            function simulateAnalysis() {
+                const progressBar = document.getElementById('analyze-progress');
+                const progressText = document.getElementById('analyze-progress-text');
+                const analyzeStatus = document.getElementById('analyze-status');
+                const resultPreview = document.getElementById('analyze-result-preview');
+                const continueBtn = document.getElementById('continue-btn');
+                
+                let progress = 0;
+                const interval = setInterval(() => {
+                    progress += 5;
+                    progressBar.style.width = `${progress}%`;
+                    progressText.textContent = `${progress}%`;
+                    
+                    if (progress >= 100) {
+                        clearInterval(interval);
+                        analyzeStatus.innerHTML = '<p class="text-green-600 mb-2"><i class="fa fa-check-circle mr-1"></i> 分析完成</p><p class="text-sm text-gray-500">已识别出5种食材</p>';
+                        resultPreview.classList.remove('hidden');
+                        continueBtn.classList.remove('hidden');
+                    }
+                }, 100);
+            }
+            
+            // 继续按钮点击事件
+            document.getElementById('continue-btn').addEventListener('click', function() {
+                showPage('#result-page');
+            });
+            
+            // 添加到库存按钮点击事件
+            document.getElementById('add-to-inventory-btn').addEventListener('click', function() {
+                showPage('#inventory-page');
+            });
+            
+            // 生成菜谱按钮点击事件
+            document.getElementById('generate-recipe-btn').addEventListener('click', function() {
+                const recipeInput = document.getElementById('recipe-input');
+                if (recipeInput.value.trim() !== '') {
+                    document.getElementById('recipe-result').classList.remove('hidden');
+                    document.getElementById('add-to-shopping-btn').classList.remove('hidden');
+                }
+            });
+            
+            // 添加到购物清单按钮点击事件
+            document.getElementById('add-to-shopping-btn').addEventListener('click', function() {
+                showPage('#shopping-page');
+            });
+            
+            // 通知按钮点击事件
+            document.getElementById('notification-btn').addEventListener('click', function() {
+                document.getElementById('notification-modal').classList.remove('hidden');
+            });
+            
+            // 关闭通知弹窗
+            document.getElementById('close-notification').addEventListener('click', function() {
+                document.getElementById('notification-modal').classList.add('hidden');
+            });
+            
+            // 点击弹窗外部关闭弹窗
+            document.getElementById('notification-modal').addEventListener('click', function(e) {
+                if (e.target === this) {
+                    this.classList.add('hidden');
+                }
+            });
+            
+            // 分类按钮点击事件
+            document.querySelectorAll('.category-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    document.querySelectorAll('.category-btn').forEach(btn => {
+                        btn.classList.remove('bg-primary', 'text-white');
+                        btn.classList.add('bg-white', 'text-gray-700');
+                    });
+                    this.classList.remove('bg-white', 'text-gray-700');
+                    this.classList.add('bg-primary', 'text-white');
+                });
+            });
+            
+            // 编辑保质期功能
+            const editExpiryModal = document.getElementById('edit-expiry-modal');
+            const closeEditExpiry = document.getElementById('close-edit-expiry');
+            const saveExpiry = document.getElementById('save-expiry');
+            const cancelEdit = document.getElementById('cancel-edit');
+            const ingredientName = document.getElementById('ingredient-name');
+            const expiryDate = document.getElementById('expiry-date');
+            const storageLocation = document.getElementById('storage-location');
+            
+            // 打开编辑弹窗
+            document.querySelectorAll('.edit-expiry-btn').forEach(button => {
+                button.addEventListener('click', function() {
+                    const ingredient = this.getAttribute('data-ingredient');
+                    const expiry = this.getAttribute('data-expiry');
+                    const location = this.getAttribute('data-location');
+                    
+                    ingredientName.value = ingredient;
+                    expiryDate.value = expiry;
+                    storageLocation.value = location;
+                    
+                    editExpiryModal.classList.remove('hidden');
+                });
+            });
+            
+            // 关闭编辑弹窗
+            closeEditExpiry.addEventListener('click', function() {
+                editExpiryModal.classList.add('hidden');
+            });
+            
+            // 取消编辑
+            cancelEdit.addEventListener('click', function() {
+                editExpiryModal.classList.add('hidden');
+            });
+            
+            // 点击弹窗外部关闭弹窗
+            editExpiryModal.addEventListener('click', function(e) {
+                if (e.target === this) {
+                    this.classList.add('hidden');
+                }
+            });
+            
+            // 保存保质期更改
+            saveExpiry.addEventListener('click', function() {
+                const ingredient = ingredientName.value;
+                const newExpiry = expiryDate.value;
+                const newLocation = storageLocation.value;
+                
+                // 更新按钮上的数据属性
+                document.querySelectorAll('.edit-expiry-btn').forEach(button => {
+                    if (button.getAttribute('data-ingredient') === ingredient) {
+                        button.setAttribute('data-expiry', newExpiry);
+                        button.setAttribute('data-location', newLocation);
+                        
+                        // 更新UI显示
+                        const card = button.closest('.ingredient-card');
+                        const locationElement = card.querySelector('.text-gray-500:last-child');
+                        const expiryElement = card.querySelector('.text-danger, .text-warning, .text-secondary');
+                        
+                        // 更新位置信息
+                        locationElement.textContent = `· ${newLocation}`;
+                        
+                        // 计算并更新过期状态
+                        const today = new Date();
+                        const expiry = new Date(newExpiry);
+                        const diffTime = expiry - today;
+                        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                        
+                        if (diffDays < 0) {
+                            // 已过期
+                            expiryElement.textContent = `${Math.abs(diffDays)}天前过期`;
+                            expiryElement.classList.remove('text-warning', 'text-secondary');
+                            expiryElement.classList.add('text-danger');
+                            card.classList.remove('status-warning', 'status-fresh');
+                            card.classList.add('status-expired');
+                        } else if (diffDays <= 3) {
+                            // 即将过期
+                            expiryElement.textContent = `还有${diffDays}天`;
+                            expiryElement.classList.remove('text-danger', 'text-secondary');
+                            expiryElement.classList.add('text-warning');
+                            card.classList.remove('status-expired', 'status-fresh');
+                            card.classList.add('status-warning');
+                        } else {
+                            // 新鲜
+                            expiryElement.textContent = `还有${diffDays}天`;
+                            expiryElement.classList.remove('text-danger', 'text-warning');
+                            expiryElement.classList.add('text-secondary');
+                            card.classList.remove('status-expired', 'status-warning');
+                            card.classList.add('status-fresh');
+                        }
+                    }
+                });
+                
+                // 关闭弹窗
+                editExpiryModal.classList.add('hidden');
+                
+                // 显示成功提示
+                alert('保质期更新成功！');
+            });
+            
+            // 食材数量编辑功能
+            document.querySelectorAll('.quantity-display').forEach(display => {
+                display.addEventListener('click', function() {
+                    const controls = this.nextElementSibling;
+                    controls.classList.toggle('hidden');
+                    this.classList.toggle('hidden');
+                });
+            });
+            
+            // 减少数量按钮
+            document.querySelectorAll('.decrease-quantity').forEach(button => {
+                button.addEventListener('click', function() {
+                    const valueElement = this.nextElementSibling;
+                    let value = parseInt(valueElement.textContent);
+                    if (value > 1) {
+                        value--;
+                        valueElement.textContent = value;
+                        
+                        // 更新显示
+                        const display = this.closest('.flex').querySelector('.quantity-display');
+                        const unit = display.textContent.replace(/[0-9]/g, '').trim();
+                        display.textContent = `${value}${unit}`;
+                    }
+                });
+            });
+            
+            // 增加数量按钮
+            document.querySelectorAll('.increase-quantity').forEach(button => {
+                button.addEventListener('click', function() {
+                    const valueElement = this.previousElementSibling;
+                    let value = parseInt(valueElement.textContent);
+                    value++;
+                    valueElement.textContent = value;
+                    
+                    // 更新显示
+                    const display = this.closest('.flex').querySelector('.quantity-display');
+                    const unit = display.textContent.replace(/[0-9]/g, '').trim();
+                    display.textContent = `${value}${unit}`;
+                });
+            });
+            
+            // 手动添加食材功能
+            const addIngredientModal = document.getElementById('add-ingredient-modal');
+            const closeAddIngredient = document.getElementById('close-add-ingredient');
+            const saveNewIngredient = document.getElementById('save-new-ingredient');
+            const cancelAddIngredient = document.getElementById('cancel-add-ingredient');
+            const manualBtn = document.getElementById('manual-btn');
+            
+            // 打开添加食材弹窗
+            manualBtn.addEventListener('click', function() {
+                // 设置默认日期为明天
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                const dateString = tomorrow.toISOString().split('T')[0];
+                document.getElementById('new-ingredient-expiry').value = dateString;
+                
+                addIngredientModal.classList.remove('hidden');
+            });
+            
+            // 关闭添加食材弹窗
+            closeAddIngredient.addEventListener('click', function() {
+                addIngredientModal.classList.add('hidden');
+            });
+            
+            // 取消添加食材
+            cancelAddIngredient.addEventListener('click', function() {
+                addIngredientModal.classList.add('hidden');
+            });
+            
+            // 点击弹窗外部关闭弹窗
+            addIngredientModal.addEventListener('click', function(e) {
+                if (e.target === this) {
+                    this.classList.add('hidden');
+                }
+            });
+            
+            // 保存新食材
+            saveNewIngredient.addEventListener('click', function() {
+                const name = document.getElementById('new-ingredient-name').value;
+                const quantity = document.getElementById('new-ingredient-quantity').value;
+                const unit = document.getElementById('new-ingredient-unit').value;
+                const expiry = document.getElementById('new-ingredient-expiry').value;
+                const location = document.getElementById('new-ingredient-location').value;
+                
+                if (!name || !quantity || !expiry) {
+                    alert('请填写完整信息！');
+                    return;
+                }
+                
+                // 计算过期状态
+                const today = new Date();
+                const expiryDate = new Date(expiry);
+                const diffTime = expiryDate - today;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+                
+                let statusClass, statusText, statusColor;
+                if (diffDays < 0) {
+                    statusClass = 'status-expired';
+                    statusText = '已过期';
+                    statusColor = 'text-danger';
+                } else if (diffDays <= 3) {
+                    statusClass = 'status-warning';
+                    statusText = '即将过期';
+                    statusColor = 'text-warning';
+                } else {
+                    statusClass = 'status-fresh';
+                    statusText = '新鲜';
+                    statusColor = 'text-secondary';
+                }
+                
+                // 获取食材图标
+                let icon = '🥫'; // 默认图标
+                const iconMap = {
+                    '牛奶': '🥛',
+                    '鸡蛋': '🥚',
+                    '生菜': '🥬',
+                    '番茄': '🍅',
+                    '牛肉': '🥩',
+                    '鸡肉': '🍗',
+                    '苹果': '🍎',
+                    '香蕉': '🍌',
+                    '面包': '🍞',
+                    '米饭': '🍚'
+                };
+                
+                if (iconMap[name]) {
+                    icon = iconMap[name];
+                }
+                
+                // 创建新食材卡片
+                const newCard = document.createElement('div');
+                newCard.className = `ingredient-card ${statusClass} bg-white rounded-xl p-4 card-shadow mb-3`;
+                newCard.innerHTML = `
+                    <div class="flex items-center">
+                        <div class="w-14 h-14 rounded-lg bg-green-50 flex items-center justify-center mr-4">
+                            <span class="text-2xl">${icon}</span>
+                        </div>
+                        <div class="flex-1">
+                            <div class="flex justify-between">
+                                <p class="font-medium">${name}</p>
+                                <span class="text-xs ${statusColor} font-medium">${statusText}</span>
+                            </div>
+                            <div class="flex justify-between items-center mt-1">
+                                <div class="flex items-center">
+                                    <span class="text-xs text-gray-500 quantity-display">${quantity}${unit}</span>
+                                    <div class="quantity-controls hidden ml-2 flex items-center">
+                                        <button class="decrease-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">-</button>
+                                        <span class="mx-1 quantity-value text-xs">${quantity}</span>
+                                        <button class="increase-quantity w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center text-xs">+</button>
+                                    </div>
+                                    <span class="text-xs text-gray-500 ml-1">· ${location}</span>
+                                </div>
+                                <span class="text-xs ${statusColor}">${diffDays < 0 ? `${Math.abs(diffDays)}天前过期` : `还有${diffDays}天`}</span>
+                            </div>
+                        </div>
+                        <button class="edit-expiry-btn p-2 text-gray-400 hover:text-primary" data-ingredient="${name}" data-expiry="${expiry}" data-location="${location}">
+                            <i class="fa fa-pencil"></i>
+                        </button>
+                    </div>
+                `;
+                
+                // 添加到库存列表
+                const freshSection = document.querySelector('#inventory-page .space-y-3 > div:last-child');
+                freshSection.appendChild(newCard);
+                
+                // 为新添加的元素添加事件监听器
+                const newDisplay = newCard.querySelector('.quantity-display');
+                newDisplay.addEventListener('click', function() {
+                    const controls = this.nextElementSibling;
+                    controls.classList.toggle('hidden');
+                    this.classList.toggle('hidden');
+                });
+                
+                const newDecreaseBtn = newCard.querySelector('.decrease-quantity');
+                newDecreaseBtn.addEventListener('click', function() {
+                    const valueElement = this.nextElementSibling;
+                    let value = parseInt(valueElement.textContent);
+                    if (value > 1) {
+                        value--;
+                        valueElement.textContent = value;
+                        
+                        // 更新显示
+                        const display = this.closest('.flex').querySelector('.quantity-display');
+                        const unit = display.textContent.replace(/[0-9]/g, '').trim();
+                        display.textContent = `${value}${unit}`;
+                    }
+                });
+                
+                const newIncreaseBtn = newCard.querySelector('.increase-quantity');
+                newIncreaseBtn.addEventListener('click', function() {
+                    const valueElement = this.previousElementSibling;
+                    let value = parseInt(valueElement.textContent);
+                    value++;
+                    valueElement.textContent = value;
+                    
+                    // 更新显示
+                    const display = this.closest('.flex').querySelector('.quantity-display');
+                    const unit = display.textContent.replace(/[0-9]/g, '').trim();
+                    display.textContent = `${value}${unit}`;
+                });
+                
+                const newEditBtn = newCard.querySelector('.edit-expiry-btn');
+                newEditBtn.addEventListener('click', function() {
+                    const ingredient = this.getAttribute('data-ingredient');
+                    const expiry = this.getAttribute('data-expiry');
+                    const location = this.getAttribute('data-location');
+                    
+                    ingredientName.value = ingredient;
+                    expiryDate.value = expiry;
+                    storageLocation.value = location;
+                    
+                    editExpiryModal.classList.remove('hidden');
+                });
+                
+                // 关闭弹窗
+                addIngredientModal.classList.add('hidden');
+                
+                // 清空表单
+                document.getElementById('new-ingredient-name').value = '';
+                document.getElementById('new-ingredient-quantity').value = '1';
+                
+                // 显示成功提示
+                alert('食材添加成功！');
+                
+                // 切换到库存页面
+                showPage('#inventory-page');
+            });
+        });
+    </script>
+</body>
+</html>
